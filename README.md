@@ -304,46 +304,99 @@ support-rag-assistant/
 
 ## What I'd improve (honest list)
 
-Things I consciously scoped out of the MVP:
+Things I consciously scoped out of the MVP, grouped by the kind of work
+each item is — same axes I'd use to plan the next quarter of roadmap.
 
-- **Reranker.** Adding a cross-encoder reranker (Cohere, ColBERT, or
+### Retrieval & answer quality
+
+- **Reranker.** A cross-encoder reranker (Cohere, ColBERT, or
   `ms-marco-MiniLM-L-12`) between retrieval and generation would lift
-  source precision significantly, especially on ambiguous tickets like
-  A4/A5 where top-1 embedding score misleads.
-- **Multi-turn memory.** This is single-turn. Real support is often a
-  follow-up (*"to my earlier question about KYC…"*). Supporting
-  conversation state means extending the `/resolve` contract and
-  running retrieval against the full conversation, not just the latest
-  message.
-- **Human feedback loop.** Every escalation should be a labelling
-  opportunity: did the human end up answering from a specific KB
-  article? Feed that back into a fine-tuning or DPO dataset over
-  3–6 months.
-- **Observability.** Currently the trace is in the response and in the
-  eval JSON. In production we'd ship it to LangSmith / Datadog / an
-  internal clickhouse and have dashboards for escalation-reason drift.
-- **Canary and shadow mode.** `ShadowPipeline` that runs a new threshold
-  set in parallel to the production one and surfaces diffs on recent
-  tickets. Would let us move from "thresholds tuned on 20 tickets" to
-  data-driven tuning.
-- **Threshold calibration.** 20 tickets is nowhere near enough to tune
-  `SIM_THRESHOLD` or `CONFIDENCE_THRESHOLD` rigorously. With 200+
-  labelled tickets you'd optimise for maximum decision accuracy subject
-  to a zero-tolerance constraint on high-risk false-negatives.
-- **Intercom integration.** No actual Intercom webhook. The shape of
-  the API is chosen so that a thin Intercom adapter (Conversation →
-  ticket text, Decision → reply / tag / assignment) is a half-day job,
-  but it's not in this repo.
+  source precision, especially on ambiguous tickets like A4/A5 where
+  top-1 embedding score misleads.
 - **Reranker by category.** RG tickets should weight empathy in the
   answer; billing tickets should weight precision. Not attempted.
-- **Prompt injection defence.** Tested ticket D5 catches the obvious
-  *"ignore previous instructions"* attempt via OOD classification, but
-  there's no proper prompt-injection hardening (input sandboxing,
-  separator tokens, system-prompt isolation). Would be a real concern
-  at production scale.
 - **Source freshness.** Every article has an `updated` date in
   frontmatter but the retriever doesn't use it. Older docs should rank
   lower when competing with recent updates on the same topic.
+- **Multi-turn memory.** This is single-turn. Real support is often a
+  follow-up (*"to my earlier question about KYC…"*). Supporting
+  conversation state means running retrieval against the full
+  conversation, not just the latest message.
+
+### Production deployment (Growe / iGaming-specific)
+
+- **Intercom adapter.** No actual webhook in the repo. The `Decision`
+  shape is chosen so that a thin Intercom adapter (Conversation →
+  ticket text, Decision → reply / tag / assignment) is a half-day job.
+  This is the single most important integration since Growe runs
+  Intercom + Fin AI.
+- **Multi-tenancy across brands.** Parimatch, JugaBet, TOPCasino — same
+  group, different brands, different KBs, different tone. Need
+  `brand_id` routing → per-tenant KB collection in Chroma + per-tenant
+  prompt overlay.
+- **VIP-aware routing.** High-value players (`vip_tier` from Intercom
+  custom attribute) should bypass certain auto-answer paths and go
+  straight to a dedicated agent. Not engineering — product policy
+  enforced in the pipeline.
+- **PII redaction.** Tickets contain emails, phone numbers, IBAN,
+  passport numbers. Strip before sending to LLM — for GDPR and to keep
+  prompt-cache hit rate high.
+- **Per-jurisdiction compliance.** UK requires GamStop checks, MGA has
+  RG disclosure rules, Curaçao has licensing-footer requirements. The
+  pipeline needs to know jurisdiction and apply rules at the message-
+  to-operator level.
+- **Localized KB.** Currently English KB + multilingual embeddings.
+  Long-term: native-language KB articles per major market (RU, PT-BR,
+  HI) with cross-lingual fallback. Higher precision on local-language
+  questions.
+
+### Safety, observability & ops
+
+- **Real prompt-injection defence.** D5 catches the obvious *"ignore
+  previous instructions"* via OOD, but a determined attacker with
+  separator tokens, character-by-character injection, or markdown
+  smuggling would slip past. Need input sandboxing, output filtering,
+  and a separate adversarial classifier.
+- **Audit log to a data warehouse.** Every Decision (especially RG /
+  legal / fraud) needs to land in ClickHouse / BigQuery with full
+  reasoning_trace. Compliance retention + post-hoc investigation.
+- **LangSmith / Helicone trace shipping.** Trace is in the response
+  today. In production it goes to a dedicated tracing tool with
+  dashboards for escalation-reason drift, p95 latency, source
+  distribution, and cost-per-resolution.
+- **Cost guardrails.** Per-tenant LLM budget, circuit breaker on Groq
+  spike, daily-spend dashboard alert. Trivial to add, very hard to
+  retrofit after the bill arrives.
+- **Distinguish "don't know" vs "won't say".** Both escalate today.
+  But `low_retrieval` should feed the KB-gap dashboard while `high_risk_rg`
+  should never feed any data product. Tag them as different signals.
+
+### Eval & calibration
+
+- **Threshold calibration with 200+ labelled tickets.** 20 tickets is
+  nowhere near enough to tune `SIM_THRESHOLD` or
+  `CONFIDENCE_THRESHOLD` rigorously. Optimise for max decision
+  accuracy subject to a zero-tolerance constraint on high-risk false-
+  negatives.
+- **Canary and shadow mode.** `ShadowPipeline` that runs a new
+  threshold set in parallel to the production one on real traffic and
+  surfaces diffs. Required before any prompt or threshold change ships.
+- **Human feedback loop.** Every operator override is a labelling
+  opportunity: did the human answer from a specific kb_id? Feed back
+  into a fine-tuning / DPO dataset over 3-6 months.
+- **A/B testing infrastructure.** For prompt iterations specifically.
+  Run two versions of the generator prompt on 50/50 of traffic, watch
+  resolution-rate and CSAT delta.
+
+### KB management
+
+- **KB versioning + re-embed on update.** Today the snapshot is
+  whatever was in `knowledge_base/` at last `python -m src.ingest`.
+  Production needs file-watching, automatic re-embedding, and version
+  tracking so we know which article version was cited in past answers.
+- **Periodic article-usage sweep.** Articles that haven't been cited
+  in 90 days are either irrelevant (delete) or undiscoverable
+  (rephrase). Automate the report.
 
 ---
 
