@@ -10,6 +10,12 @@ money, or in distress. This assistant is designed around that fact: every
 layer is a different kind of "don't answer" signal, and every decision
 it makes is auditable via a `reasoning_trace`.
 
+<!-- After recording: uncomment the next line. -->
+<!-- ![Pipeline viewer demo](demo/demo.gif) -->
+
+> Recording instructions: [`demo/RECORDING.md`](demo/RECORDING.md). Full static
+> snapshot of 7 representative tickets is in [`demo/demo_transcript.md`](demo/demo_transcript.md).
+
 ---
 
 ## What it does
