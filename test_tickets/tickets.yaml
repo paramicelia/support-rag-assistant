@@ -3,8 +3,8 @@
 # return. `expected_source_any_of` (optional) lists KB IDs; if ANY of them
 # appears in the cited sources we count it as a source-hit.
 #
-# Language mix is intentional: English-majority with a sprinkle of
-# Russian/Ukrainian/Portuguese to reflect a multilingual ticket stream.
+# Language mix is intentional: English-majority with three Russian
+# tickets (A2, C5, D3) to exercise multilingual handling.
 
 # --- Category A: should answer -------------------------------------------
 

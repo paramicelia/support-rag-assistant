@@ -82,5 +82,5 @@ git commit -m "Add UI demo gif"
 git push
 ```
 
-Then uncomment the `<!-- ![Demo](demo/demo.gif) -->` line at the top of
+Then add a `![Pipeline viewer demo](demo/demo.gif)` line near the top of
 `README.md` so it renders inline on GitHub.

@@ -217,30 +217,37 @@ answers the ticket, while the mock blindly trusts top-1 retrieval.
 ### The two decision failures on Groq (A3, A5)
 
 Both are answer-category tickets that should have been answered and were
-escalated to a human instead:
+escalated to a human instead. Both misses start in retrieval: the
+generator and the verifier only see one chunk per article, cut to its
+first 400 characters, and in both cases that text did not contain the
+answer.
 
 - **A3 — wagering explanation (expected source kb_012).** The generator
-  answered from kb_012 with self-rated confidence 5. The grounding
-  verifier rated the answer `partial` over a worked example
-  ("100 × 35 = 3,500"), but kb_012 contains the same example
-  ("35 × €100 = €3,500"), so this was most likely a verifier false
-  positive: an answer supported by the article was escalated as
-  `hallucination`.
+  answered from kb_012 with self-rated confidence 5 and added a worked
+  example ("100 × 35 = 3,500"). The verifier rated the answer `partial`
+  because the example was not in the snippet it was given, and the
+  pipeline escalated with `hallucination`. kb_012 does contain that
+  example, but in a chunk that scored lower for this ticket, so neither
+  the generator nor the verifier saw it. The verifier judged its input
+  correctly; the gap is which part of the article was passed on.
 
 - **A5 — USDT deposit not credited (expected source kb_011 or kb_009).**
-  A retrieval miss: the top-1 hit was kb_008 ("Why was my withdrawal
-  rejected") instead of kb_011 ("Duplicate or missing deposit"), because
-  *"balance didn't change"* is embedding-close to the withdrawal
-  articles. The ticket was escalated rather than answered: in one run
-  the generator refused (confidence 1, "the sources do not provide a
-  direct answer") and the reason was `low_confidence`; in the run behind
-  the confusion matrix below the reason was `hallucination`.
+  A retrieval miss. kb_008 ("Why was my withdrawal rejected") ranked
+  first, because *"balance didn't change"* is embedding-close to the
+  withdrawal articles. kb_011 ("Duplicate or missing deposit") was still
+  in the top five, so it could be cited, but its snippet did not include
+  the crypto-deposit steps that answer this ticket. The ticket was
+  escalated rather than answered: in one run the generator refused
+  (confidence 1, "the sources do not provide a direct answer") and the
+  reason was `low_confidence`; in the run behind the confusion matrix
+  below, the verifier did not accept the generator's answer
+  (`hallucination`).
 
 Loosening the gates on this 20-ticket set is not the fix. Accepting
 `partial` verdicts would have let A3 through, but also any partially
-grounded answer on future tickets. A3 points at the verifier's
-judgement, A5 at retrieval ranking (see the reranker item under
-"What I'd improve").
+grounded answer on future tickets. The fix belongs in retrieval: better
+ranking (see the reranker item under "What I'd improve") and passing the
+part of the article that matches the ticket.
 
 ### Confusion matrix (Groq)
 
