@@ -210,9 +210,11 @@ and zero cost). The "Groq" backend is the intended path for a demo.
 | **Source precision** (answer) | 3 / 5 (60%)       | **5 / 5 (100%)**     |
 | Latency p50 / p95 / mean (ms) | 4 / 12 / 270      | 623 / 5810 / 1510    |
 
-The headline number that moves is **source precision** — the real LLM
-reads all five retrieved snippets and picks the one that actually
-answers the ticket, while the mock blindly trusts top-1 retrieval.
+The headline number that moves is **source precision**: whether an
+expected article is among the cited sources. The real LLM reads all five
+retrieved snippets and can cite a lower-ranked article, while the mock
+always cites the top-1 hit. Source precision also counts escalated
+tickets, so A3 and A5 below count as hits although neither was answered.
 
 ### The two decision failures on Groq (A3, A5)
 
@@ -222,14 +224,14 @@ generator and the verifier only see one chunk per article, cut to its
 first 400 characters, and in both cases that text did not contain the
 answer.
 
-- **A3 — wagering explanation (expected source kb_012).** The generator
-  answered from kb_012 with self-rated confidence 5 and added a worked
-  example ("100 × 35 = 3,500"). The verifier rated the answer `partial`
-  because the example was not in the snippet it was given, and the
-  pipeline escalated with `hallucination`. kb_012 does contain that
-  example, but in a chunk that scored lower for this ticket, so neither
-  the generator nor the verifier saw it. The verifier judged its input
-  correctly; the gap is which part of the article was passed on.
+- **A3 — wagering explanation (expected source kb_012).** None of the
+  five snippets passed on explains wagering or contains a worked example.
+  kb_012 does, but in a chunk that scored lower for this ticket than the
+  kb_012 chunk that was passed. The generator still answered with
+  self-rated confidence 5 and added a worked example ("100 × 35 = 3,500")
+  instead of refusing, so design decision 3 did not hold here. The
+  verifier rated the answer `partial` and the pipeline escalated with
+  `hallucination`, which was the right call on the text it was given.
 
 - **A5 — USDT deposit not credited (expected source kb_011 or kb_009).**
   A retrieval miss. kb_008 ("Why was my withdrawal rejected") ranked
@@ -245,9 +247,10 @@ answer.
 
 Loosening the gates on this 20-ticket set is not the fix. Accepting
 `partial` verdicts would have let A3 through, but also any partially
-grounded answer on future tickets. The fix belongs in retrieval: better
-ranking (see the reranker item under "What I'd improve") and passing the
-part of the article that matches the ticket.
+grounded answer on future tickets. The fixes are upstream: better ranking
+(see the reranker item under "What I'd improve"), passing more than one
+chunk per article instead of a single 400-character snippet, and a
+generator that refuses when its sources do not contain the answer.
 
 ### Confusion matrix (Groq)
 
