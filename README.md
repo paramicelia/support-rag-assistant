@@ -1,8 +1,9 @@
 # AurumPlay — Support RAG Assistant
 
-> A RAG-backed support assistant for an iGaming operator, built with an
-> explicit **six-layer boundary architecture**. The point of this project
-> is not that it answers questions — it's that it knows when **not** to.
+> A take-home exercise for an AI-specialist role: a RAG-backed support
+> assistant for a fictional iGaming operator, built with an explicit
+> **six-layer boundary architecture**. The point of this project is not
+> that it answers questions — it's that it knows when **not** to.
 
 In support automation the expensive failure mode isn't missing an answer,
 it's sending a confident wrong one to a customer who is angry, losing
@@ -10,11 +11,8 @@ money, or in distress. This assistant is designed around that fact: every
 layer is a different kind of "don't answer" signal, and every decision
 it makes is auditable via a `reasoning_trace`.
 
-<!-- After recording: uncomment the next line. -->
-<!-- ![Pipeline viewer demo](demo/demo.gif) -->
-
-> Recording instructions: [`demo/RECORDING.md`](demo/RECORDING.md). Full static
-> snapshot of 7 representative tickets is in [`demo/demo_transcript.md`](demo/demo_transcript.md).
+> Full static snapshot of 7 representative tickets is in
+> [`demo/demo_transcript.md`](demo/demo_transcript.md).
 
 ---
 
@@ -172,20 +170,19 @@ for an accurate human one.
 
 ### 6. Multilingual embeddings, not English-only
 
-Growe's markets (Asia / Africa / LatAm) produce tickets in a lot of
-languages against an English KB. Default `all-MiniLM-L6-v2` is
-English-only and tanks on Russian/Ukrainian/Portuguese tickets. We use
+Tickets arrive in many languages against an English KB, and the default
+`all-MiniLM-L6-v2` is English-only. We use
 `paraphrase-multilingual-MiniLM-L12-v2` (same 384-dim footprint, 50+
-languages) — a cheap change with outsized impact. Russian ticket **C5**
-and Russian ticket **A2** both route correctly only because of this.
+languages). Russian ticket **A2** is answered from the English KB this
+way (see [`demo/demo_transcript.md`](demo/demo_transcript.md)).
 
 ### 7. Everything is visible in the trace
 
 Every `Decision` has a `reasoning_trace` listing which layer fired with
 what evidence, retrieval scores, the generator's self-rated confidence
 and reason, and the verifier's verdict. It's not a performance feature —
-it's what makes the system reviewable in production, and it's the
-single most important artefact for anyone auditing a wrong answer.
+it's what makes each decision reviewable, and it's the single most
+important artefact for anyone auditing a wrong answer.
 
 ---
 
@@ -217,34 +214,33 @@ The headline number that moves is **source precision** — the real LLM
 reads all five retrieved snippets and picks the one that actually
 answers the ticket, while the mock blindly trusts top-1 retrieval.
 
-### The two "decision failures" on Groq are design features, not bugs
+### The two decision failures on Groq (A3, A5)
 
-Two tickets (A3, A5) are scored as decision failures on Groq but are
-actually the **boundary layers doing their job**:
+Both are answer-category tickets that should have been answered and were
+escalated to a human instead:
 
-- **A3 — wagering explanation.** LLM generated a correct answer with
-  self-rated confidence 5 ("directly stated in kb_012"). The grounding
-  **verifier flagged it as `partial`** — the model added a numerical
-  example ("100 × 35 = 3,500") that was not literally in the source.
-  Pipeline fail-closed → escalate with `hallucination`. This is the
-  verifier catching the smallest kind of hallucination the system is
-  designed to catch. An answer would have been fine; an escalation is
-  safer; both are consistent with the documented policy.
+- **A3 — wagering explanation (expected source kb_012).** The generator
+  answered from kb_012 with self-rated confidence 5. The grounding
+  verifier rated the answer `partial` over a worked example
+  ("100 × 35 = 3,500"), but kb_012 contains the same example
+  ("35 × €100 = €3,500"), so this was most likely a verifier false
+  positive: an answer supported by the article was escalated as
+  `hallucination`.
 
-- **A5 — USDT deposit missing.** Retrieval brought kb_008
-  (withdrawal rejected) as top-1 instead of kb_011 (deposit duplicate)
-  because *"balance didn't change"* is embedding-close to withdrawal
-  articles. The **generator read all five snippets and refused** with
-  confidence 1, stating "the sources do not provide a direct answer".
-  This is the "better to refuse than to invent" prompt working exactly
-  as designed — the generator declined to answer from irrelevant
-  sources, and the pipeline escalated with `low_confidence`.
+- **A5 — USDT deposit not credited (expected source kb_011 or kb_009).**
+  A retrieval miss: the top-1 hit was kb_008 ("Why was my withdrawal
+  rejected") instead of kb_011 ("Duplicate or missing deposit"), because
+  *"balance didn't change"* is embedding-close to the withdrawal
+  articles. The ticket was escalated rather than answered: in one run
+  the generator refused (confidence 1, "the sources do not provide a
+  direct answer") and the reason was `low_confidence`; in the run behind
+  the confusion matrix below the reason was `hallucination`.
 
-If you tuned the thresholds against this particular 20-ticket set you
-could force both of these to "answer" (relax verifier to accept
-`partial`, lower confidence threshold). Doing so would also relax the
-same guards on every future ticket — the 2 failures here buy the safety
-guarantee on the other 18.
+Loosening the gates on this 20-ticket set is not the fix. Accepting
+`partial` verdicts would have let A3 through, but also any partially
+grounded answer on future tickets. A3 points at the verifier's
+judgement, A5 at retrieval ranking (see the reranker item under
+"What I'd improve").
 
 ### Confusion matrix (Groq)
 
@@ -257,12 +253,13 @@ guarantee on the other 18.
  out_of_scope (5)       .       .         .        .         .        .        5    .       .
 ```
 
-The two `answer → halluc` cells are A3 and A5 (discussed above — both
-are the verifier legitimately flagging drift). The `low_retrieval →
-low_conf` cell is **B5** (Mega Moolah): retrieval squeaked through the
-similarity gate, but the generator read the irrelevant snippets and
-refused. `high_risk` and `out_of_scope` are perfect — the two most
-critical rows for a regulated-industry assistant.
+The two `answer → halluc` cells are A3 and A5 (see above). The
+`low_retrieval → low_conf` cell is **B5** (Mega Moolah): retrieval
+passed the similarity gate on irrelevant snippets and the generator
+refused, so the ticket was escalated with `low_confidence` instead of
+the expected `low_retrieval` — the one escalation-reason miss (14/15).
+All five `high_risk` and all five `out_of_scope` tickets were escalated
+with the expected reason.
 
 Note: LLM outputs are not fully deterministic even at `temperature=0.1`.
 The exact A3/A5 scoring can oscillate between `hallucination` and
@@ -322,33 +319,6 @@ each item is — same axes I'd use to plan the next quarter of roadmap.
   follow-up (*"to my earlier question about KYC…"*). Supporting
   conversation state means running retrieval against the full
   conversation, not just the latest message.
-
-### Production deployment (Growe / iGaming-specific)
-
-- **Intercom adapter.** No actual webhook in the repo. The `Decision`
-  shape is chosen so that a thin Intercom adapter (Conversation →
-  ticket text, Decision → reply / tag / assignment) is a half-day job.
-  This is the single most important integration since Growe runs
-  Intercom + Fin AI.
-- **Multi-tenancy across brands.** Parimatch, JugaBet, TOPCasino — same
-  group, different brands, different KBs, different tone. Need
-  `brand_id` routing → per-tenant KB collection in Chroma + per-tenant
-  prompt overlay.
-- **VIP-aware routing.** High-value players (`vip_tier` from Intercom
-  custom attribute) should bypass certain auto-answer paths and go
-  straight to a dedicated agent. Not engineering — product policy
-  enforced in the pipeline.
-- **PII redaction.** Tickets contain emails, phone numbers, IBAN,
-  passport numbers. Strip before sending to LLM — for GDPR and to keep
-  prompt-cache hit rate high.
-- **Per-jurisdiction compliance.** UK requires GamStop checks, MGA has
-  RG disclosure rules, Curaçao has licensing-footer requirements. The
-  pipeline needs to know jurisdiction and apply rules at the message-
-  to-operator level.
-- **Localized KB.** Currently English KB + multilingual embeddings.
-  Long-term: native-language KB articles per major market (RU, PT-BR,
-  HI) with cross-lingual fallback. Higher precision on local-language
-  questions.
 
 ### Safety, observability & ops
 

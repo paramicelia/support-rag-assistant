@@ -27,9 +27,9 @@ class Settings:
 
     # --- retrieval ---
     # Multilingual MiniLM — 384 dim, supports 50+ languages. Chosen over the
-    # English-only all-MiniLM-L6-v2 because our target markets (Parimatch
-    # Asia / Africa / LatAm) generate tickets in multiple languages against
-    # an English KB; monolingual embeddings would tank retrieval on those.
+    # English-only all-MiniLM-L6-v2 because tickets arrive in multiple
+    # languages against an English KB; monolingual embeddings would tank
+    # retrieval on those.
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     chunk_size_words: int = 180
     chunk_overlap_words: int = 30

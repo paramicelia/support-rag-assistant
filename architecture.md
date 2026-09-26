@@ -160,8 +160,8 @@ the classifier is down.
 **Files:** `src/retriever.py`, `src/ingest.py`
 
 - Embeddings: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
-  (384 dim, 50+ languages). Chosen specifically because Growe's target
-  markets produce tickets in many languages against an English KB.
+  (384 dim, 50+ languages). Chosen because tickets arrive in many
+  languages against an English KB.
 - Vector DB: ChromaDB with cosine space, persistent directory.
 - Chunking: word-based, 180 words per chunk with 30-word overlap. The
   article **title is prepended to every chunk** — a free signal that
